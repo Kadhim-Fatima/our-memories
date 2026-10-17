@@ -633,7 +633,6 @@ class _ViewerPasswordDialog extends StatefulWidget {
 }
 
 class _ViewerPasswordDialogState extends State<_ViewerPasswordDialog> {
-  final _token = TextEditingController();
   final _pw = TextEditingController();
   final _pw2 = TextEditingController();
   bool _busy = false;
@@ -641,29 +640,23 @@ class _ViewerPasswordDialogState extends State<_ViewerPasswordDialog> {
 
   @override
   void dispose() {
-    _token.dispose();
     _pw.dispose();
     _pw2.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    final token = _token.text.trim();
     final pw = _pw.text;
-    if (token.isEmpty || pw.isEmpty) {
-      setState(() => _error = 'اكتب التوكن وكلمة السر.');
+    if (pw.isEmpty) {
+      setState(() => _error = 'اكتب كلمة السر.');
       return;
     }
-    if (pw.length < 8) {
-      setState(() => _error = 'خلي كلمة السر ٨ حروف أو أكثر.');
+    if (pw.length < 6) {
+      setState(() => _error = 'خلي كلمة السر ٦ حروف أو أكثر.');
       return;
     }
     if (pw != _pw2.text) {
       setState(() => _error = 'كلمتين السر مو متطابقات.');
-      return;
-    }
-    if (token == widget.settings.token) {
-      setState(() => _error = 'هذا توكن الأدمن. سوّي توكن ثاني قراءة فقط للمشاهدة.');
       return;
     }
     setState(() {
@@ -672,14 +665,9 @@ class _ViewerPasswordDialogState extends State<_ViewerPasswordDialog> {
     });
     final s = widget.settings;
     try {
-      // نتأكد إن توكن المشاهد يگدر يقرأ الذكريات
-      try {
-        await GitHubApi(owner: s.owner, repo: s.repo, branch: s.branch, token: token).checkAccess();
-      } on GitHubException catch (e) {
-        throw GitHubException(e.status, 'توكن المشاهدة: ${e.message}');
-      }
+      // المشاهد يدخل بنفس الوصول، بس الموقع يفتحله وضع المشاهدة (بدون تعديل)
       final cfg = await ViewerAccess.encrypt(
-        {'owner': s.owner, 'repo': s.repo, 'branch': s.branch, 'token': token},
+        {'owner': s.owner, 'repo': s.repo, 'branch': s.branch, 'token': s.token},
         pw,
       );
       try {
@@ -692,7 +680,7 @@ class _ViewerPasswordDialogState extends State<_ViewerPasswordDialog> {
       } on GitHubException catch (e) {
         if (e.status == 403 || e.status == 404) {
           throw GitHubException(e.status,
-              'توكن الأدمن ما عنده صلاحية على repo الموقع (${widget.siteRepo}). ضيفه للتوكن من إعدادات GitHub بصلاحية Contents: Read and write.');
+              'التوكن مالتك ما عنده صلاحية على repo الموقع (${widget.siteRepo}). ضيفه للتوكن من إعدادات GitHub بصلاحية Contents: Read and write.');
         }
         rethrow;
       }
@@ -719,20 +707,10 @@ class _ViewerPasswordDialogState extends State<_ViewerPasswordDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'اللي يدخل بكلمة السر يشوف الذكريات والصور بس، بدون إضافة أو تعديل أو حذف.',
+                'اللي يدخل بكلمة السر يشوف الذكريات والصور بس، بدون إضافة أو تعديل أو حذف. إذا حفظت كلمة سر جديدة، القديمة تبطل.',
                 style: TextStyle(color: c.muted, fontSize: 14, height: 1.6),
               ),
               const SizedBox(height: 14),
-              TextField(
-                controller: _token,
-                obscureText: true,
-                textDirection: TextDirection.ltr,
-                decoration: const InputDecoration(
-                  labelText: 'توكن المشاهدة (قراءة فقط)',
-                  hintText: 'github_pat_…',
-                ),
-              ),
-              const SizedBox(height: 10),
               TextField(
                 controller: _pw,
                 obscureText: true,
