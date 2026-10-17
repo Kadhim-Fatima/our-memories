@@ -29,6 +29,17 @@
 </head>
 <body>
   <div id="loading">ذكرياتنا ❦</div>
+  <script>
+    // يمسح النسخة القديمة المخزنة (Service Worker) مرة وحدة ويعيد التحميل
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        if (!regs.length) return;
+        Promise.all(regs.map(function (r) { return r.unregister(); }))
+          .then(function () { return window.caches ? caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }) : null; })
+          .then(function () { location.reload(); });
+      });
+    }
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
