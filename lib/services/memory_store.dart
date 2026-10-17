@@ -3,35 +3,61 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models.dart';
 import 'github_api.dart';
+import 'image_tools.dart';
+import 'photo_cache.dart';
 
 const _dataPath = 'memories.json';
+const _bookCacheKey = 'book_cache_v1';
 
 /// يدير الذكريات: يقرأ ويكتب memories.json ويرفع الصور للـ repo.
 class MemoryStore extends ChangeNotifier {
   final GitHubApi api;
-  MemoryStore(this.api);
+  /// الأدمن يگدر يصلح الصور القديمة (HEIC) بالـ repo تلقائياً
+  final bool canWrite;
+  MemoryStore(this.api, {this.canWrite = false});
 
   MemoryBook book = const MemoryBook();
   String? _sha;
   bool loading = true;
   String? error;
 
-  final Map<String, Future<Uint8List>> _photoCache = {};
-
+  /// يفتح الذكريات المحفوظة بالجهاز فوراً، وبنفس الوقت يجيب الأحدث من GitHub.
   Future<void> load() async {
-    loading = true;
     error = null;
+    var hadCache = false;
+    if (book.memories.isEmpty) {
+      try {
+        final p = await SharedPreferences.getInstance();
+        final cached = p.getString(_bookCacheKey);
+        if (cached != null) {
+          book = MemoryBook.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+          hadCache = true;
+        }
+      } catch (_) {}
+    } else {
+      hadCache = true;
+    }
+    loading = !hadCache;
     notifyListeners();
     try {
       await _fetch();
     } catch (e) {
-      error = e.toString();
+      // إذا عندنا نسخة محفوظة نخليها ونسكت، حتى بدون إنترنت تنعرض الذكريات
+      if (!hadCache) error = e.toString();
     }
     loading = false;
     notifyListeners();
+  }
+
+  Future<void> _saveBookCache() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString(_bookCacheKey, jsonEncode(book.toJson()));
+    } catch (_) {}
   }
 
   Future<void> _fetch() async {
@@ -43,6 +69,7 @@ class MemoryStore extends ChangeNotifier {
       book = MemoryBook.fromJson(jsonDecode(utf8.decode(f.bytes)) as Map<String, dynamic>);
       _sha = f.sha;
     }
+    await _saveBookCache();
   }
 
   /// يطبق تعديل على أحدث نسخة من الملف ويحفظ.
@@ -56,6 +83,7 @@ class MemoryStore extends ChangeNotifier {
         _sha = await api.putFile(_dataPath, bytes, sha: _sha, message: message);
         book = next;
         notifyListeners();
+        await _saveBookCache();
         return;
       } on GitHubException catch (e) {
         if (!e.isConflict || attempt == 2) rethrow;
@@ -78,10 +106,13 @@ class MemoryStore extends ChangeNotifier {
     for (var i = 0; i < newPhotos.length; i++) {
       onProgress?.call(i, newPhotos.length);
       final p = newPhotos[i];
-      final path = 'photos/${memory.date.year}/${memory.id}-${_rand()}.${p.ext}';
-      await api.putFile(path, p.bytes, message: 'صورة: ${memory.title}');
-      _photoCache[path] = Future.value(p.bytes);
-      _ready[path] = p.bytes;
+      // تصغير لحد ٢٠٠٠ بكسل قبل الرفع (صورة الموبايل ٨ ميگا تصير تقريباً ٤٠٠ كيلو)
+      final full = p.ext == 'gif' ? p.bytes : await shrinkImage(p.bytes, maxSide: 2000);
+      final ext = p.ext == 'gif' ? 'gif' : 'jpg';
+      final path = 'photos/${memory.date.year}/${memory.id}-${_rand()}.$ext';
+      await api.putFile(path, full, message: 'صورة: ${memory.title}');
+      _remember(path, 'full', full);
+      PhotoCache.put(path, 'full', full);
       uploaded.add(path);
     }
     onProgress?.call(newPhotos.length, newPhotos.length);
@@ -117,27 +148,63 @@ class MemoryStore extends ChangeNotifier {
   Future<void> _safeDelete(String path) async {
     try {
       await api.deleteFile(path, message: 'حذف صورة');
-      _photoCache.remove(path);
+      _mem.removeWhere((k, _) => k.endsWith(':$path'));
+      _loading.removeWhere((k, _) => k.endsWith(':$path'));
+      PhotoCache.remove(path);
     } catch (_) {
       // مو مشكلة إذا فشل حذف صورة، الذكرى نفسها انحفظت
     }
   }
 
-  /// يجيب الصورة من الـ repo الخاص (مع كاش بالذاكرة).
-  Future<Uint8List> photo(String path) => _photoCache.putIfAbsent(
-        path,
-        () => api.getRaw(path).then((b) {
-          _ready[path] = b;
-          return b;
-        }).catchError((Object e) {
-          _photoCache.remove(path);
-          throw e;
-        }),
-      );
+  /// الصور بثلاث طبقات كاش:
+  /// ١. الذاكرة (فوري)  ٢. الجهاز (Cache Storage، يبقى بعد ما تسكّر)  ٣. GitHub (أول مرة بس)
+  /// [thumb] نسخة صغيرة (٧٠٠ بكسل) للبطاقات، أخف وأسرع بكثير من الصورة الكاملة.
+  Future<Uint8List> photo(String path, {bool thumb = false}) {
+    final variant = thumb ? 'thumb' : 'full';
+    final key = '$variant:$path';
+    final ready = _mem[key];
+    if (ready != null) return Future.value(ready);
+    return _loading.putIfAbsent(key, () async {
+      try {
+        var bytes = await PhotoCache.get(path, variant);
+        if (bytes == null) {
+          if (thumb) {
+            final full = await photo(path);
+            bytes = await shrinkImage(full, maxSide: 700, quality: .82);
+          } else {
+            bytes = await api.getRaw(path);
+            if (isHeic(bytes)) {
+              // صورة آيفون قديمة: نحولها للعرض، والأدمن يصلحها بالـ repo مرة وحدة
+              bytes = await shrinkImage(bytes, maxSide: 2000);
+              if (canWrite && !isHeic(bytes)) _repairPhoto(path, bytes);
+            }
+          }
+          PhotoCache.put(path, variant, bytes);
+        }
+        _remember(path, variant, bytes);
+        return bytes;
+      } finally {
+        _loading.remove(key);
+      }
+    });
+  }
 
-  /// الصورة إذا انجابت قبل (حتى تطلع فوراً بدون وميض).
-  Uint8List? cachedPhoto(String path) => _ready[path];
-  final Map<String, Uint8List> _ready = {};
+  Future<void> _repairPhoto(String path, Uint8List jpeg) async {
+    try {
+      final f = await api.getFile(path);
+      if (f == null) return;
+      await api.putFile(path, jpeg, sha: f.sha, message: 'تحويل صورة HEIC إلى JPG');
+    } catch (_) {}
+  }
+
+  /// الصورة إذا موجودة بالذاكرة (حتى تطلع فوراً بدون وميض).
+  Uint8List? cachedPhoto(String path, {bool thumb = false}) =>
+      _mem['${thumb ? 'thumb' : 'full'}:$path'] ?? (thumb ? _mem['full:$path'] : null);
+
+  void _remember(String path, String variant, Uint8List bytes) => _mem['$variant:$path'] = bytes;
+
+  final Map<String, Uint8List> _mem = {};
+  final Map<String, Future<Uint8List>> _loading = {};
 
   static String newId() =>
       '${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}${_rand()}';

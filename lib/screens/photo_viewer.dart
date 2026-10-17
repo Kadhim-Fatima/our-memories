@@ -71,7 +71,7 @@ class _PhotoViewerState extends State<PhotoViewer> {
                       child: Center(
                         child: Hero(
                           tag: photoHeroTag(ph.memory, ph.path),
-                          child: RepoImage(store: widget.store, path: ph.path, fit: BoxFit.contain),
+                          child: _FullImage(store: widget.store, path: ph.path),
                         ),
                       ),
                     );
@@ -146,6 +146,38 @@ class _PhotoViewerState extends State<PhotoViewer> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// بالعارض: تطلع النسخة الصغيرة فوراً، وبعدها تتبدل بالكاملة بهدوء لما توصل.
+class _FullImage extends StatelessWidget {
+  final MemoryStore store;
+  final String path;
+  const _FullImage({required this.store, required this.path});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: store.photo(path),
+      initialData: store.cachedPhoto(path),
+      builder: (context, snap) {
+        if (snap.hasData) {
+          return Image.memory(snap.data!, fit: BoxFit.contain, gaplessPlayback: true);
+        }
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            RepoImage(store: store, path: path, fit: BoxFit.contain),
+            if (!snap.hasError)
+              const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+              ),
+          ],
+        );
+      },
     );
   }
 }

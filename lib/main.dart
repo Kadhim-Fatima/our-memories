@@ -65,7 +65,10 @@ class _RootState extends State<Root> {
   void _open(RepoSettings s) {
     _store?.dispose();
     _settings = s;
-    _store = MemoryStore(GitHubApi(owner: s.owner, repo: s.repo, branch: s.branch, token: s.token))
+    _store = MemoryStore(
+      GitHubApi(owner: s.owner, repo: s.repo, branch: s.branch, token: s.token),
+      canWrite: !s.viewer,
+    )
       ..load();
   }
 

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../models.dart';
 import '../services/github_api.dart';
+import '../services/image_tools.dart';
 import '../services/memory_store.dart';
 import '../theme.dart';
 import '../widgets/repo_image.dart';
@@ -24,7 +25,8 @@ class MemoryForm extends StatefulWidget {
 class _NewPhoto {
   final Uint8List bytes;
   final String ext;
-  _NewPhoto(this.bytes, this.ext);
+  final Uint8List preview;
+  _NewPhoto(this.bytes, this.ext, this.preview);
 }
 
 class _MemoryFormState extends State<MemoryForm> {
@@ -50,14 +52,14 @@ class _MemoryFormState extends State<MemoryForm> {
 
   Future<void> _pickPhotos() async {
     try {
-      final files = await ImagePicker().pickMultiImage(
-        maxWidth: 2000,
-        maxHeight: 2000,
-        imageQuality: 85,
-      );
+      // التصغير يصير قبل الرفع (بالمتصفح)، فهنا ناخذ الصور مثل ما هي
+      final files = await ImagePicker().pickMultiImage();
       for (final f in files) {
         final bytes = await f.readAsBytes();
-        _new.add(_NewPhoto(bytes, _extOf(f)));
+        // نسخة صغيرة للمعاينة حتى الصفحة تبقى خفيفة
+        final preview = await shrinkImage(bytes, maxSide: 400, quality: .8);
+        _new.add(_NewPhoto(bytes, _extOf(f), preview));
+        if (mounted) setState(() {});
       }
       if (mounted) setState(() {});
     } catch (_) {
@@ -245,7 +247,7 @@ class _MemoryFormState extends State<MemoryForm> {
                       for (var i = 0; i < _new.length; i++)
                         _Thumb(
                           onRemove: _saving ? null : () => setState(() => _new.removeAt(i)),
-                          child: Image.memory(_new[i].bytes, fit: BoxFit.cover),
+                          child: Image.memory(_new[i].preview, fit: BoxFit.cover),
                         ),
                       InkWell(
                         borderRadius: BorderRadius.circular(10),
