@@ -35,7 +35,7 @@ class _SetupScreenState extends State<SetupScreen> {
       if (!mounted) return;
       setState(() {
         _viewerCfg = cfg;
-        _adminMode = cfg == null;
+        _adminMode = false;
         _checking = false;
       });
     });
@@ -85,8 +85,12 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _connectViewer() async {
     final pw = _password.text;
     final cfg = _viewerCfg;
-    if (pw.isEmpty || cfg == null) {
+    if (pw.isEmpty) {
       setState(() => _error = 'اكتب كلمة السر.');
+      return;
+    }
+    if (cfg == null) {
+      setState(() => _error = 'كلمة سر المشاهدة بعدها ما محددة. تنحدد من منصة التحكم.');
       return;
     }
     await _run(() async {
@@ -169,8 +173,7 @@ class _SetupScreenState extends State<SetupScreen> {
                                 : const Text('ادخل'),
                           ),
                           const SizedBox(height: 12),
-                          if (_viewerCfg != null)
-                            TextButton(
+                          TextButton(
                               onPressed: _busy
                                   ? null
                                   : () => setState(() {
