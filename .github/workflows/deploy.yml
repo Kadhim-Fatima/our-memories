@@ -30,7 +30,16 @@ jobs:
         run: flutter pub get
 
       - name: Build web
-        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter build web --release --base-href "/${{ github.event.repository.name }}/" 2>&1 | tee build.log
+
+      # إذا فشل البناء، الأخطاء تطلع بصفحة الـ run حتى تنقرأ بسهولة
+      - name: Show build errors
+        if: failure()
+        shell: bash
+        run: grep -E "Error|error" build.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
 
       - uses: actions/configure-pages@v5
 
