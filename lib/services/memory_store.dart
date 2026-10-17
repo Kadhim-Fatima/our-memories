@@ -16,7 +16,6 @@ const _bookCacheKey = 'book_cache_v1';
 /// يدير الذكريات: يقرأ ويكتب memories.json ويرفع الصور للـ repo.
 class MemoryStore extends ChangeNotifier {
   final GitHubApi api;
-  /// الأدمن يگدر يصلح الصور القديمة (HEIC) بالـ repo تلقائياً
   final bool canWrite;
   MemoryStore(this.api, {this.canWrite = false});
 
@@ -111,8 +110,10 @@ class MemoryStore extends ChangeNotifier {
       final ext = p.ext == 'gif' ? 'gif' : 'jpg';
       final path = 'photos/${memory.date.year}/${memory.id}-${_rand()}.$ext';
       await api.putFile(path, full, message: 'صورة: ${memory.title}');
-      _remember(path, 'full', full);
-      PhotoCache.put(path, 'full', full);
+      if (!isHeic(full)) {
+        _remember(path, 'full', full);
+        PhotoCache.put(path, 'full', full);
+      }
       uploaded.add(path);
     }
     onProgress?.call(newPhotos.length, newPhotos.length);
@@ -167,18 +168,16 @@ class MemoryStore extends ChangeNotifier {
     return _loading.putIfAbsent(key, () async {
       try {
         var bytes = await PhotoCache.get(path, variant);
+        if (bytes != null && isHeic(bytes)) bytes = null; // نسخة قديمة غلط بالكاش
         if (bytes == null) {
           if (thumb) {
             final full = await photo(path);
             bytes = await shrinkImage(full, maxSide: 700, quality: .82);
           } else {
             bytes = await api.getRaw(path);
-            if (isHeic(bytes)) {
-              // صورة آيفون قديمة: نحولها للعرض، والأدمن يصلحها بالـ repo مرة وحدة
-              bytes = await shrinkImage(bytes, maxSide: 2000);
-              if (canWrite && !isHeic(bytes)) _repairPhoto(path, bytes);
-            }
           }
+          // صورة HEIC بعدها ما تحولت (GitHub يحولها خلال دقيقة): ما نخزنها
+          if (isHeic(bytes)) throw const PhotoNotReady();
           PhotoCache.put(path, variant, bytes);
         }
         _remember(path, variant, bytes);
@@ -187,14 +186,6 @@ class MemoryStore extends ChangeNotifier {
         _loading.remove(key);
       }
     });
-  }
-
-  Future<void> _repairPhoto(String path, Uint8List jpeg) async {
-    try {
-      final f = await api.getFile(path);
-      if (f == null) return;
-      await api.putFile(path, jpeg, sha: f.sha, message: 'تحويل صورة HEIC إلى JPG');
-    } catch (_) {}
   }
 
   /// الصورة إذا موجودة بالذاكرة (حتى تطلع فوراً بدون وميض).
@@ -213,4 +204,9 @@ class MemoryStore extends ChangeNotifier {
     final r = Random();
     return List.generate(4, (_) => 'abcdefghijklmnopqrstuvwxyz0123456789'[r.nextInt(36)]).join();
   }
+}
+
+/// الصورة بعدها تتحول من HEIC (يصير تلقائياً على GitHub خلال دقيقة).
+class PhotoNotReady implements Exception {
+  const PhotoNotReady();
 }

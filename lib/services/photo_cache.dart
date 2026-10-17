@@ -7,11 +7,13 @@ import 'package:web/web.dart' as web;
 /// الصورة تنجاب من GitHub مرة وحدة، وبعدها تطلع من الجهاز مباشرة حتى لو سكّرت الموقع.
 /// ملفات الصور ما تتغير أبداً (كل صورة إلها اسم جديد)، فالكاش ما يحتاج تحديث.
 class PhotoCache {
-  static const _name = 'our-memories-photos-v1';
+  static const _name = 'our-memories-photos-v2';
   static Future<web.Cache?>? _open;
 
   static Future<web.Cache?> _cache() => _open ??= () async {
         try {
+          // النسخة القديمة من الكاش كان بيها صور HEIC ما تنعرض، نمسحها
+          web.window.caches.delete('our-memories-photos-v1'.toString());
           return await web.window.caches.open(_name).toDart;
         } catch (_) {
           return null; // متصفح ما يدعم الكاش (مثلاً وضع التصفح الخفي)

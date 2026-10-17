@@ -27,6 +27,7 @@ class RepoImage extends StatelessWidget {
             snap.data!,
             fit: fit,
             gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => _placeholder(c, Icons.broken_image_outlined),
             frameBuilder: (_, child, frame, sync) => sync
                 ? child
                 : AnimatedOpacity(
@@ -36,18 +37,37 @@ class RepoImage extends StatelessWidget {
                   ),
           );
         }
+        if (snap.hasError) {
+          return snap.error is PhotoNotReady
+              ? _placeholder(c, Icons.hourglass_top_rounded, 'الصورة تتجهز…')
+              : _placeholder(c, Icons.broken_image_outlined);
+        }
         return Container(
           color: c.accentSoft,
           alignment: Alignment.center,
-          child: snap.hasError
-              ? Icon(Icons.broken_image_outlined, color: c.muted)
-              : SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: c.accent),
-                ),
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: c.accent),
+          ),
         );
       },
     );
   }
 }
+
+Widget _placeholder(AppColors c, IconData icon, [String? text]) => Container(
+      color: c.accentSoft,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: c.muted),
+          if (text != null) ...[
+            const SizedBox(height: 4),
+            Text(text, textAlign: TextAlign.center, style: TextStyle(color: c.muted, fontSize: 12)),
+          ],
+        ],
+      ),
+    );
