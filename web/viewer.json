@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "kdf": "pbkdf2-sha256",
+  "iter": 200000,
+  "salt": "1bHsXxo7yDc7x3wGVkqT/Q==",
+  "nonce": "RdyqAVMt/67/yPB6",
+  "ct": "wEFolZfHjDG5VzDkp7YxVNTmaZ98CgfA9BBayvwsrJuryqletKDuMQp4E7ooeD6uIimYQGBC6DNy57c9vHKjnrh5CHtyJlYDNJUjVO0dqWEf35euWZIVDiPVk/EsQPC3EUAaEGdXX4b48yob2f1utJ0rn7jm4BhVQLJ+gLr6PvtBeldyjy6VNKYMS+EX5aRCm6+Am09yfaa/aO7qh76SeZX5AZUdWeURRnrtFw==",
+  "mac": "VpDjrZizFJyc5PMKCBNKPw=="
+}
