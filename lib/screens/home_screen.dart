@@ -194,7 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
         key: ValueKey(m.id),
         index: i,
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 22),
+          padding: const EdgeInsets.only(bottom: 16),
           child: _MemoryCard(
             store: store,
             memory: m,
@@ -472,7 +472,7 @@ class _YearDivider extends StatelessWidget {
   }
 }
 
-/// بطاقة الذكرى: صورة كبيرة، وتحتها العنوان والقصة وباقي الصور.
+/// بطاقة الذكرى: الصورة على اليمين، وجنبها العنوان ثم التاريخ ثم الوصف.
 class _MemoryCard extends StatelessWidget {
   final MemoryStore store;
   final Memory memory;
@@ -491,131 +491,128 @@ class _MemoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final m = memory;
-    final date = DateFormat.MMMMd('ar').format(m.date);
+    final date = DateFormat.yMMMMd('ar').format(m.date);
     final hasPhotos = m.photos.isNotEmpty;
 
     return Container(
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: c.surface,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: c.line.withAlpha(140)),
         boxShadow: [
-          BoxShadow(color: c.accent.withAlpha(22), blurRadius: 30, offset: const Offset(0, 12)),
+          BoxShadow(color: c.accent.withAlpha(18), blurRadius: 24, offset: const Offset(0, 10)),
         ],
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (hasPhotos)
-            GestureDetector(
-              onTap: () => onPhoto(0),
-              child: AspectRatio(
-                aspectRatio: 4 / 3,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Hero(
-                      tag: photoHeroTag(m, m.photos.first),
-                      child: RepoImage(store: store, path: m.photos.first),
-                    ),
-                    // تدرج خفيف حتى التاريخ يبين
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          stops: [0, .35],
-                          colors: [Color(0x55000000), Color(0x00000000)],
-                        ),
+      child: LayoutBuilder(builder: (context, box) {
+        final imgW = (box.maxWidth * .38).clamp(110.0, 220.0);
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // الصورة (على اليمين لأن الصفحة عربية)
+            if (hasPhotos) ...[
+              GestureDetector(
+                onTap: () => onPhoto(0),
+                child: SizedBox(
+                  width: imgW,
+                  child: AspectRatio(
+                    aspectRatio: 3 / 4,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Hero(
+                            tag: photoHeroTag(m, m.photos.first),
+                            child: RepoImage(store: store, path: m.photos.first),
+                          ),
+                          if (m.photos.length > 1)
+                            PositionedDirectional(
+                              bottom: 8,
+                              end: 8,
+                              child: _Chip(
+                                text: '+${m.photos.length - 1}',
+                                icon: Icons.photo_library_outlined,
+                                onImage: true,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    PositionedDirectional(
-                      top: 14,
-                      start: 14,
-                      child: _Chip(text: date, onImage: true),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+            ],
+            // النصوص: العنوان، التاريخ، الوصف
+            Expanded(
+              child: Padding(
+                padding: EdgeInsetsDirectional.only(top: 4, start: hasPhotos ? 0 : 6, end: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      m.title.isEmpty ? 'بدون عنوان' : m.title,
+                      style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, height: 1.35, color: c.ink),
                     ),
-                    if (m.photos.length > 1)
-                      PositionedDirectional(
-                        top: 14,
-                        end: 14,
-                        child: _Chip(text: '${m.photos.length} صور', icon: Icons.photo_library_outlined, onImage: true),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(Icons.event_outlined, size: 15, color: c.accent),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(date,
+                              style: TextStyle(color: c.accent, fontSize: 13.5, fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
+                    if (m.place.isNotEmpty || m.tag.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          if (m.place.isNotEmpty) _Chip(text: m.place, icon: Icons.place_outlined),
+                          if (m.tag.isNotEmpty) _Chip(text: m.tag),
+                        ],
+                      ),
+                    ],
+                    if (m.story.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(height: 1, width: 36, color: c.gold.withAlpha(150)),
+                      const SizedBox(height: 10),
+                      _ExpandableText(m.story),
+                    ],
+                    if (onEdit != null || onDelete != null)
+                      Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (onEdit != null)
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                tooltip: 'تعديل',
+                                onPressed: onEdit,
+                                icon: Icon(Icons.edit_outlined, color: c.muted, size: 19),
+                              ),
+                            if (onDelete != null)
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                tooltip: 'حذف',
+                                onPressed: onDelete,
+                                icon: Icon(Icons.delete_outline_rounded, color: c.danger, size: 19),
+                              ),
+                          ],
+                        ),
                       ),
                   ],
                 ),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (!hasPhotos) _Chip(text: date),
-                    if (m.tag.isNotEmpty) _Chip(text: m.tag),
-                    if (m.place.isNotEmpty) _Chip(text: m.place, icon: Icons.place_outlined),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(m.title.isEmpty ? 'بدون عنوان' : m.title,
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, height: 1.4, color: c.ink)),
-                if (m.story.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _ExpandableText(m.story),
-                ],
-                if (m.photos.length > 1) ...[
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    height: 86,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: m.photos.length - 1,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (_, i) {
-                        final p = m.photos[i + 1];
-                        return GestureDetector(
-                          onTap: () => onPhoto(i + 1),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: SizedBox(
-                              width: 86,
-                              child: Hero(tag: photoHeroTag(m, p), child: RepoImage(store: store, path: p)),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-                if (onEdit != null || onDelete != null) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (onEdit != null)
-                        IconButton(
-                          tooltip: 'تعديل',
-                          onPressed: onEdit,
-                          icon: Icon(Icons.edit_outlined, color: c.muted, size: 20),
-                        ),
-                      if (onDelete != null)
-                        IconButton(
-                          tooltip: 'حذف',
-                          onPressed: onDelete,
-                          icon: Icon(Icons.delete_outline_rounded, color: c.danger, size: 20),
-                        ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
+          ],
+        );
+      }),
     );
   }
 }
@@ -661,11 +658,11 @@ class _ExpandableTextState extends State<_ExpandableText> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final style = TextStyle(fontSize: 16, height: 1.85, color: c.ink.withAlpha(220));
+    final style = TextStyle(fontSize: 15, height: 1.8, color: c.ink.withAlpha(215));
     return LayoutBuilder(builder: (context, box) {
       final tp = TextPainter(
         text: TextSpan(text: widget.text, style: style),
-        maxLines: 5,
+        maxLines: 4,
         textDirection: Directionality.of(context),
       )..layout(maxWidth: box.maxWidth);
       final long = tp.didExceedMaxLines;
@@ -679,7 +676,7 @@ class _ExpandableTextState extends State<_ExpandableText> {
             child: Text(
               widget.text,
               style: style,
-              maxLines: _open ? null : 5,
+              maxLines: _open ? null : 4,
               overflow: _open ? TextOverflow.visible : TextOverflow.fade,
             ),
           ),
