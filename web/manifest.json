@@ -1,0 +1,19 @@
+{
+  "name": "ذكرياتنا",
+  "short_name": "ذكرياتنا",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#F6EFF2",
+  "theme_color": "#9B2D55",
+  "description": "دفتر ذكرياتنا الخاص",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    { "src": "icons/Icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/Icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/Icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/Icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

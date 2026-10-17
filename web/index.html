@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <!-- الـ base href ينضبط تلقائياً وقت النشر حسب اسم الـ repo -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="دفتر ذكرياتنا">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#9B2D55">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="ذكرياتنا">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>ذكرياتنا</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body { background: #F6EFF2; margin: 0; }
+    @media (prefers-color-scheme: dark) { body { background: #191115; } }
+    #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      font: 600 28px serif; color: #9B2D55; }
+  </style>
+</head>
+<body>
+  <div id="loading">ذكرياتنا ❦</div>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
