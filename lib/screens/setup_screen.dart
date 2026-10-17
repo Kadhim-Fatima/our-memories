@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config.dart';
 import '../services/github_api.dart';
 import '../services/settings.dart';
 import '../services/viewer_access.dart';
@@ -17,9 +18,6 @@ class SetupScreen extends StatefulWidget {
 }
 
 class _SetupScreenState extends State<SetupScreen> {
-  final _owner = TextEditingController();
-  final _repo = TextEditingController();
-  final _branch = TextEditingController(text: 'main');
   final _token = TextEditingController();
   final _password = TextEditingController();
   bool _busy = false;
@@ -33,12 +31,6 @@ class _SetupScreenState extends State<SetupScreen> {
   @override
   void initState() {
     super.initState();
-    RepoSettings.lastRepo().then((v) {
-      if (!mounted) return;
-      if (_owner.text.isEmpty) _owner.text = v.$1;
-      if (_repo.text.isEmpty) _repo.text = v.$2;
-      _branch.text = v.$3;
-    });
     ViewerAccess.fetchConfig().then((cfg) {
       if (!mounted) return;
       setState(() {
@@ -51,9 +43,6 @@ class _SetupScreenState extends State<SetupScreen> {
 
   @override
   void dispose() {
-    _owner.dispose();
-    _repo.dispose();
-    _branch.dispose();
     _token.dispose();
     _password.dispose();
     super.dispose();
@@ -77,13 +66,13 @@ class _SetupScreenState extends State<SetupScreen> {
 
   Future<void> _connectAdmin() async {
     final s = RepoSettings(
-      owner: _owner.text.trim(),
-      repo: _repo.text.trim(),
-      branch: _branch.text.trim().isEmpty ? 'main' : _branch.text.trim(),
+      owner: dataOwner,
+      repo: dataRepo,
+      branch: dataBranch,
       token: _token.text.trim(),
     );
-    if (s.owner.isEmpty || s.repo.isEmpty || s.token.isEmpty) {
-      setState(() => _error = 'اكتب اسم الحساب واسم الـ repo والتوكن.');
+    if (s.token.isEmpty) {
+      setState(() => _error = 'اكتب التوكن.');
       return;
     }
     await _run(() async {
@@ -142,12 +131,25 @@ class _SetupScreenState extends State<SetupScreen> {
                               textAlign: TextAlign.center,
                               style: TextStyle(color: c.gold, letterSpacing: 1, fontWeight: FontWeight.w500)),
                           const SizedBox(height: 4),
-                          Text('أهلاً بيكم',
-                              textAlign: TextAlign.center, style: displayFont(size: 48, color: c.accent)),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text.rich(
+                              TextSpan(children: [
+                                TextSpan(text: appCouple.name1),
+                                TextSpan(
+                                  text: ' و ',
+                                  style: displayFont(size: 44, color: c.gold, weight: FontWeight.w400),
+                                ),
+                                TextSpan(text: appCouple.name2),
+                              ]),
+                              textAlign: TextAlign.center,
+                              style: displayFont(size: 48, color: c.accent),
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             _adminMode
-                                ? 'دخول الأدمن: الذكريات والصور محفوظة بـ repo خاص على GitHub.'
+                                ? 'منصة التحكم: اكتب التوكن مالتك.'
                                 : 'اكتبي كلمة السر حتى تشوفين ذكرياتنا 🤍',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: c.muted, height: 1.6),
@@ -175,7 +177,7 @@ class _SetupScreenState extends State<SetupScreen> {
                                         _adminMode = !_adminMode;
                                         _error = null;
                                       }),
-                              child: Text(_adminMode ? 'دخول بكلمة السر' : 'دخول الأدمن',
+                              child: Text(_adminMode ? 'دخول بكلمة السر' : 'منصة التحكم',
                                   style: TextStyle(color: c.muted)),
                             ),
                           if (_adminMode) ...[
@@ -217,24 +219,13 @@ class _SetupScreenState extends State<SetupScreen> {
 
   List<Widget> _adminFields(AppColors c) => [
         TextField(
-          controller: _owner,
-          textDirection: TextDirection.ltr,
-          decoration: const InputDecoration(labelText: 'اسم حساب GitHub'),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _repo,
-          textDirection: TextDirection.ltr,
-          decoration: const InputDecoration(labelText: 'اسم الـ repo الخاص', hintText: 'our-memories-data'),
-        ),
-        const SizedBox(height: 12),
-        TextField(
           controller: _token,
           obscureText: _hide,
+          autofocus: true,
           textDirection: TextDirection.ltr,
           onSubmitted: (_) => _connectAdmin(),
           decoration: InputDecoration(
-            labelText: 'التوكن (Personal access token)',
+            labelText: 'التوكن',
             hintText: 'github_pat_…',
             suffixIcon: IconButton(
               tooltip: _hide ? 'إظهار' : 'إخفاء',
@@ -243,20 +234,6 @@ class _SetupScreenState extends State<SetupScreen> {
             ),
           ),
         ),
-        Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: Text('إعدادات إضافية', style: TextStyle(color: c.muted, fontSize: 14)),
-            children: [
-              TextField(
-                controller: _branch,
-                textDirection: TextDirection.ltr,
-                decoration: const InputDecoration(labelText: 'الفرع (branch)'),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
+        const SizedBox(height: 16),
       ];
 }

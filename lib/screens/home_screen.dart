@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
+import '../config.dart';
 import '../models.dart';
 import '../services/github_api.dart';
 import '../services/memory_store.dart';
@@ -65,71 +66,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _editCouple() async {
-    final cp = store.book.couple;
-    final n1 = TextEditingController(text: cp.name1);
-    final n2 = TextEditingController(text: cp.name2);
-    DateTime? since = cp.since;
-    final df = DateFormat.yMMMMd('ar');
-    final result = await showDialog<Couple>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: Text('إحنا', style: displayFont(size: 28, color: AppColors.of(ctx).accent)),
-          content: SizedBox(
-            width: 380,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: n1, decoration: const InputDecoration(labelText: 'اسمك')),
-                const SizedBox(height: 10),
-                TextField(controller: n2, decoration: const InputDecoration(labelText: 'اسم خطيبتك')),
-                const SizedBox(height: 10),
-                InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () async {
-                    final d = await showDatePicker(
-                      context: ctx,
-                      initialDate: since ?? DateTime.now(),
-                      firstDate: DateTime(1990),
-                      lastDate: DateTime(2100),
-                    );
-                    if (d != null) setD(() => since = d);
-                  },
-                  child: InputDecorator(
-                    decoration: const InputDecoration(labelText: 'تاريخ الخطوبة'),
-                    child: Text(since == null ? 'اختر التاريخ' : df.format(since!)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-            FilledButton(
-              onPressed: () => Navigator.pop(
-                ctx,
-                Couple(name1: n1.text.trim(), name2: n2.text.trim(), since: since),
-              ),
-              child: const Text('حفظ'),
-            ),
-          ],
-        ),
-      ),
-    );
-    n1.dispose();
-    n2.dispose();
-    if (result == null) return;
-    try {
-      await store.saveCouple(result);
-      if (mounted) _snack('انحفظ');
-    } on GitHubException catch (e) {
-      if (mounted) _snack(e.message);
-    } catch (_) {
-      if (mounted) _snack('ما انحفظ، جرب مرة ثانية.');
-    }
-  }
-
   /// الأدمن يحدد كلمة سر للمشاهد. نحتاج توكن ثاني "قراءة فقط" ينشفّر بكلمة السر.
   Future<void> _viewerPassword() async {
     final site = ViewerAccess.siteRepo();
@@ -184,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 SliverToBoxAdapter(
                   child: _Hero(
                     store: store,
-                    onEdit: _admin ? _editCouple : null,
+                    onEdit: null,
                     onViewerPassword: _admin ? _viewerPassword : null,
                     onLogout: widget.onLogout,
                   ),
@@ -331,7 +267,7 @@ class _Hero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final cp = store.book.couple;
+    final cp = appCouple;
     final nf = NumberFormat.decimalPattern('ar');
     final df = DateFormat.yMMMMd('ar');
 
