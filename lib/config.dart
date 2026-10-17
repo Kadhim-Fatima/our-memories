@@ -9,7 +9,7 @@ const dataBranch = 'main';
 
 /// الأسماء وتاريخ الخطوبة (ثابتة، تتغير من هنا بس).
 final appCouple = Couple(
-  name1: 'كاظم',
-  name2: 'خطيبتي',
-  since: null, // مثال: DateTime(2025, 6, 20)
+  name1: 'مهندس كاظم',
+  name2: 'مهندسة ريحانة كاظم',
+  since: DateTime(2026, 4, 11),
 );
