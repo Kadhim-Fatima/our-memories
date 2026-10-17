@@ -78,7 +78,8 @@ class GitHubApi {
   }
 
   /// يتأكد إن الـ repo موجود والتوكن يشتغل.
-  Future<void> checkAccess() async {
+  /// يرجع true إذا التوكن يگدر يكتب (أدمن)، و false إذا قراءة فقط (مشاهد).
+  Future<bool> checkAccess() async {
     final r = await http.get(
       Uri.https('api.github.com', '/repos/$owner/$repo'),
       headers: _headers(),
@@ -86,9 +87,7 @@ class GitHubApi {
     if (r.statusCode != 200) throw _error(r);
     final j = jsonDecode(r.body) as Map<String, dynamic>;
     final perms = (j['permissions'] as Map?) ?? {};
-    if (perms['push'] != true) {
-      throw GitHubException(403, 'التوكن يقرأ بس وما يگدر يكتب. فعّل صلاحية Contents: Read and write.');
-    }
+    return perms['push'] == true;
   }
 
   /// يجيب ملف. يرجع null إذا الملف مو موجود.

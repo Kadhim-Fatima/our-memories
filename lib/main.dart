@@ -47,6 +47,7 @@ class Root extends StatefulWidget {
 
 class _RootState extends State<Root> {
   MemoryStore? _store;
+  RepoSettings? _settings;
   bool _ready = false;
 
   @override
@@ -63,6 +64,7 @@ class _RootState extends State<Root> {
 
   void _open(RepoSettings s) {
     _store?.dispose();
+    _settings = s;
     _store = MemoryStore(GitHubApi(owner: s.owner, repo: s.repo, branch: s.branch, token: s.token))
       ..load();
   }
@@ -84,6 +86,6 @@ class _RootState extends State<Root> {
     if (store == null) {
       return SetupScreen(onConnected: (s) => setState(() => _open(s)));
     }
-    return HomeScreen(store: store, onLogout: _logout);
+    return HomeScreen(store: store, settings: _settings!, onLogout: _logout);
   }
 }

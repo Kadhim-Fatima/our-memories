@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../models.dart';
 import '../services/github_api.dart';
 import '../services/memory_store.dart';
+import '../services/settings.dart';
+import '../services/viewer_access.dart';
 import '../theme.dart';
 import '../widgets/repo_image.dart';
 import 'memory_form.dart';
@@ -11,8 +13,9 @@ import 'photo_viewer.dart';
 
 class HomeScreen extends StatefulWidget {
   final MemoryStore store;
+  final RepoSettings settings;
   final VoidCallback onLogout;
-  const HomeScreen({super.key, required this.store, required this.onLogout});
+  const HomeScreen({super.key, required this.store, required this.settings, required this.onLogout});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -22,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0; // 0 الذكريات، 1 الألبوم
 
   MemoryStore get store => widget.store;
+  bool get _admin => !widget.settings.viewer;
 
   void _snack(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -126,6 +130,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// الأدمن يحدد كلمة سر للمشاهد. نحتاج توكن ثاني "قراءة فقط" ينشفّر بكلمة السر.
+  Future<void> _viewerPassword() async {
+    final site = ViewerAccess.siteRepo();
+    if (site == null) {
+      _snack('هاي الميزة تشتغل من رابط الموقع على GitHub Pages بس.');
+      return;
+    }
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ViewerPasswordDialog(settings: widget.settings, siteOwner: site.$1, siteRepo: site.$2),
+    );
+    if (result == true && mounted) {
+      _snack('انحفظت كلمة السر. الموقع يتحدث خلال دقيقتين تقريباً.');
+    }
+  }
+
   List<PhotoRef> _allPhotos(List<Memory> sorted) => [
         for (final m in sorted)
           for (final p in m.photos) (path: p, memory: m),
@@ -147,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final sorted = store.book.sorted;
         final photos = _allPhotos(sorted);
         return Scaffold(
-          floatingActionButton: store.loading || store.error != null
+          floatingActionButton: !_admin || store.loading || store.error != null
               ? null
               : FloatingActionButton.extended(
                   onPressed: () => _openForm(),
@@ -160,7 +181,14 @@ class _HomeScreenState extends State<HomeScreen> {
             onRefresh: store.load,
             child: CustomScrollView(
               slivers: [
-                SliverToBoxAdapter(child: _Hero(store: store, onEdit: _editCouple, onLogout: widget.onLogout)),
+                SliverToBoxAdapter(
+                  child: _Hero(
+                    store: store,
+                    onEdit: _admin ? _editCouple : null,
+                    onViewerPassword: _admin ? _viewerPassword : null,
+                    onLogout: widget.onLogout,
+                  ),
+                ),
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _TabsHeader(
@@ -209,7 +237,9 @@ class _HomeScreenState extends State<HomeScreen> {
           child: _Empty(
             title: 'صفحتكم بعدها بيضاء',
             body: 'ابدأوا بأول ذكرى: يوم تعارفتوا، يوم الخطوبة، أو حتى طلعة الأسبوع الماضي.',
-            action: FilledButton(onPressed: () => _openForm(), child: const Text('+ أضف أول ذكرى')),
+            action: _admin
+                ? FilledButton(onPressed: () => _openForm(), child: const Text('+ أضف أول ذكرى'))
+                : null,
           ),
         ),
       ];
@@ -228,8 +258,8 @@ class _HomeScreenState extends State<HomeScreen> {
             child: _MemoryTile(
               store: store,
               memory: m,
-              onEdit: () => _openForm(m),
-              onDelete: () => _delete(m),
+              onEdit: _admin ? () => _openForm(m) : null,
+              onDelete: _admin ? () => _delete(m) : null,
               onPhoto: (i) => _openViewer([for (final p in m.photos) (path: p, memory: m)], i),
             ),
           ),
@@ -293,9 +323,10 @@ class _Constrain extends StatelessWidget {
 
 class _Hero extends StatelessWidget {
   final MemoryStore store;
-  final VoidCallback onEdit;
+  final VoidCallback? onEdit;
+  final VoidCallback? onViewerPassword;
   final VoidCallback onLogout;
-  const _Hero({required this.store, required this.onEdit, required this.onLogout});
+  const _Hero({required this.store, this.onEdit, this.onViewerPassword, required this.onLogout});
 
   @override
   Widget build(BuildContext context) {
@@ -357,14 +388,18 @@ class _Hero extends StatelessWidget {
               child: PopupMenuButton<String>(
                 icon: Icon(Icons.more_horiz, color: c.muted),
                 onSelected: (v) {
-                  if (v == 'edit') onEdit();
+                  if (v == 'edit') onEdit?.call();
+                  if (v == 'viewer') onViewerPassword?.call();
                   if (v == 'refresh') store.load();
                   if (v == 'logout') onLogout();
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('تعديل الأسماء والتاريخ')),
-                  PopupMenuItem(value: 'refresh', child: Text('تحديث')),
-                  PopupMenuItem(value: 'logout', child: Text('تسجيل خروج من هذا الجهاز')),
+                itemBuilder: (_) => [
+                  if (onEdit != null)
+                    const PopupMenuItem(value: 'edit', child: Text('تعديل الأسماء والتاريخ')),
+                  if (onViewerPassword != null)
+                    const PopupMenuItem(value: 'viewer', child: Text('كلمة سر المشاهدة')),
+                  const PopupMenuItem(value: 'refresh', child: Text('تحديث')),
+                  const PopupMenuItem(value: 'logout', child: Text('تسجيل خروج من هذا الجهاز')),
                 ],
               ),
             ),
@@ -389,7 +424,7 @@ class _Hero extends StatelessWidget {
             const SizedBox(height: 4),
             if (sinceLine != null)
               sinceLine
-            else
+            else if (onEdit != null)
               TextButton(
                 onPressed: onEdit,
                 child: Text('اكتبوا أسماءكم وتاريخ الخطوبة',
@@ -492,14 +527,14 @@ class _YearTitle extends StatelessWidget {
 class _MemoryTile extends StatelessWidget {
   final MemoryStore store;
   final Memory memory;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   final ValueChanged<int> onPhoto;
   const _MemoryTile({
     required this.store,
     required this.memory,
-    required this.onEdit,
-    required this.onDelete,
+    this.onEdit,
+    this.onDelete,
     required this.onPhoto,
   });
 
@@ -591,13 +626,17 @@ class _MemoryTile extends StatelessWidget {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      TextButton(onPressed: onEdit, child: Text('تعديل', style: TextStyle(color: c.muted))),
-                      TextButton(onPressed: onDelete, child: Text('حذف', style: TextStyle(color: c.danger))),
-                    ],
-                  ),
+                  if (onEdit != null || onDelete != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        if (onEdit != null)
+                          TextButton(onPressed: onEdit, child: Text('تعديل', style: TextStyle(color: c.muted))),
+                        if (onDelete != null)
+                          TextButton(onPressed: onDelete, child: Text('حذف', style: TextStyle(color: c.danger))),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -643,6 +682,153 @@ class _Empty extends StatelessWidget {
           if (action != null) ...[const SizedBox(height: 18), action!],
         ],
       ),
+    );
+  }
+}
+
+class _ViewerPasswordDialog extends StatefulWidget {
+  final RepoSettings settings;
+  final String siteOwner;
+  final String siteRepo;
+  const _ViewerPasswordDialog({required this.settings, required this.siteOwner, required this.siteRepo});
+
+  @override
+  State<_ViewerPasswordDialog> createState() => _ViewerPasswordDialogState();
+}
+
+class _ViewerPasswordDialogState extends State<_ViewerPasswordDialog> {
+  final _token = TextEditingController();
+  final _pw = TextEditingController();
+  final _pw2 = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _token.dispose();
+    _pw.dispose();
+    _pw2.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final token = _token.text.trim();
+    final pw = _pw.text;
+    if (token.isEmpty || pw.isEmpty) {
+      setState(() => _error = 'اكتب التوكن وكلمة السر.');
+      return;
+    }
+    if (pw.length < 8) {
+      setState(() => _error = 'خلي كلمة السر ٨ حروف أو أكثر.');
+      return;
+    }
+    if (pw != _pw2.text) {
+      setState(() => _error = 'كلمتين السر مو متطابقات.');
+      return;
+    }
+    if (token == widget.settings.token) {
+      setState(() => _error = 'هذا توكن الأدمن. سوّي توكن ثاني قراءة فقط للمشاهدة.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final s = widget.settings;
+    try {
+      // نتأكد إن توكن المشاهد يگدر يقرأ الذكريات
+      try {
+        await GitHubApi(owner: s.owner, repo: s.repo, branch: s.branch, token: token).checkAccess();
+      } on GitHubException catch (e) {
+        throw GitHubException(e.status, 'توكن المشاهدة: ${e.message}');
+      }
+      final cfg = await ViewerAccess.encrypt(
+        {'owner': s.owner, 'repo': s.repo, 'branch': s.branch, 'token': token},
+        pw,
+      );
+      try {
+        await ViewerAccess.publish(
+          adminToken: s.token,
+          siteOwner: widget.siteOwner,
+          siteRepo: widget.siteRepo,
+          config: cfg,
+        );
+      } on GitHubException catch (e) {
+        if (e.status == 403 || e.status == 404) {
+          throw GitHubException(e.status,
+              'توكن الأدمن ما عنده صلاحية على repo الموقع (${widget.siteRepo}). ضيفه للتوكن من إعدادات GitHub بصلاحية Contents: Read and write.');
+        }
+        rethrow;
+      }
+      if (mounted) Navigator.pop(context, true);
+    } on GitHubException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'ما انحفظت، تأكد من الإنترنت وجرب مرة ثانية.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return AlertDialog(
+      title: Text('كلمة سر المشاهدة', style: displayFont(size: 26, color: c.accent)),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'اللي يدخل بكلمة السر يشوف الذكريات والصور بس، بدون إضافة أو تعديل أو حذف.',
+                style: TextStyle(color: c.muted, fontSize: 14, height: 1.6),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _token,
+                obscureText: true,
+                textDirection: TextDirection.ltr,
+                decoration: const InputDecoration(
+                  labelText: 'توكن المشاهدة (قراءة فقط)',
+                  hintText: 'github_pat_…',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _pw,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'كلمة السر الجديدة'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _pw2,
+                obscureText: true,
+                onSubmitted: (_) => _save(),
+                decoration: const InputDecoration(labelText: 'أعد كتابة كلمة السر'),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!, style: TextStyle(color: c.danger, fontSize: 14)),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          child: const Text('إلغاء'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _save,
+          child: _busy
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('حفظ'),
+        ),
+      ],
     );
   }
 }
