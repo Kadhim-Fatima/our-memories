@@ -18,9 +18,21 @@ class RepoImage extends StatelessWidget {
     final c = AppColors.of(context);
     return FutureBuilder<Uint8List>(
       future: store.photo(path),
+      initialData: store.cachedPhoto(path),
       builder: (context, snap) {
         if (snap.hasData) {
-          return Image.memory(snap.data!, fit: fit, gaplessPlayback: true);
+          return Image.memory(
+            snap.data!,
+            fit: fit,
+            gaplessPlayback: true,
+            frameBuilder: (_, child, frame, sync) => sync
+                ? child
+                : AnimatedOpacity(
+                    opacity: frame == null ? 0 : 1,
+                    duration: const Duration(milliseconds: 350),
+                    child: child,
+                  ),
+          );
         }
         return Container(
           color: c.accentSoft,

@@ -81,6 +81,7 @@ class MemoryStore extends ChangeNotifier {
       final path = 'photos/${memory.date.year}/${memory.id}-${_rand()}.${p.ext}';
       await api.putFile(path, p.bytes, message: 'صورة: ${memory.title}');
       _photoCache[path] = Future.value(p.bytes);
+      _ready[path] = p.bytes;
       uploaded.add(path);
     }
     onProgress?.call(newPhotos.length, newPhotos.length);
@@ -123,11 +124,20 @@ class MemoryStore extends ChangeNotifier {
   }
 
   /// يجيب الصورة من الـ repo الخاص (مع كاش بالذاكرة).
-  Future<Uint8List> photo(String path) =>
-      _photoCache.putIfAbsent(path, () => api.getRaw(path).catchError((Object e) {
-            _photoCache.remove(path);
-            throw e;
-          }));
+  Future<Uint8List> photo(String path) => _photoCache.putIfAbsent(
+        path,
+        () => api.getRaw(path).then((b) {
+          _ready[path] = b;
+          return b;
+        }).catchError((Object e) {
+          _photoCache.remove(path);
+          throw e;
+        }),
+      );
+
+  /// الصورة إذا انجابت قبل (حتى تطلع فوراً بدون وميض).
+  Uint8List? cachedPhoto(String path) => _ready[path];
+  final Map<String, Uint8List> _ready = {};
 
   static String newId() =>
       '${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}${_rand()}';

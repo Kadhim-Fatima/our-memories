@@ -9,6 +9,7 @@ import '../services/settings.dart';
 import '../services/viewer_access.dart';
 import '../theme.dart';
 import '../widgets/repo_image.dart';
+import '../widgets/viewer_password_dialog.dart';
 import 'memory_form.dart';
 import 'photo_viewer.dart';
 
@@ -23,8 +24,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _tab = 0; // 0 الذكريات، 1 الألبوم
-
   MemoryStore get store => widget.store;
   bool get _admin => !widget.settings.viewer;
 
@@ -34,7 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openForm([Memory? m]) async {
     final ok = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => MemoryForm(store: store, memory: m)),
+      _slideUpRoute(MemoryForm(store: store, memory: m)),
     );
     if (ok == true && mounted) _snack(m == null ? 'انحفظت الذكرى 🤍' : 'انحفظ التعديل');
   }
@@ -45,7 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('تحذف هذي الذكرى؟'),
-        content: Text('"${m.title}" وصورها راح تنحذف من الـ repo.'),
+        content: Text('"${m.title}" وصورها راح تنحذف نهائياً.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('لا')),
           TextButton(
@@ -66,7 +65,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// الأدمن يحدد كلمة سر للمشاهد. نحتاج توكن ثاني "قراءة فقط" ينشفّر بكلمة السر.
   Future<void> _viewerPassword() async {
     final site = ViewerAccess.siteRepo();
     if (site == null) {
@@ -76,22 +74,29 @@ class _HomeScreenState extends State<HomeScreen> {
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _ViewerPasswordDialog(settings: widget.settings, siteOwner: site.$1, siteRepo: site.$2),
+      builder: (_) => ViewerPasswordDialog(settings: widget.settings, siteOwner: site.$1, siteRepo: site.$2),
     );
     if (result == true && mounted) {
       _snack('انحفظت كلمة السر. الموقع يتحدث خلال دقيقتين تقريباً.');
     }
   }
 
-  List<PhotoRef> _allPhotos(List<Memory> sorted) => [
-        for (final m in sorted)
-          for (final p in m.photos) (path: p, memory: m),
-      ];
-
-  void _openViewer(List<PhotoRef> list, int i) {
+  void _openViewer(Memory m, int i) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => PhotoViewer(store: store, photos: list, initial: i)),
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.black,
+        transitionDuration: const Duration(milliseconds: 380),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, __, ___) => PhotoViewer(
+          store: store,
+          photos: [for (final p in m.photos) (path: p, memory: m)],
+          initial: i,
+        ),
+        transitionsBuilder: (_, a, __, child) =>
+            FadeTransition(opacity: CurvedAnimation(parent: a, curve: Curves.easeOut), child: child),
+      ),
     );
   }
 
@@ -102,7 +107,6 @@ class _HomeScreenState extends State<HomeScreen> {
       listenable: store,
       builder: (context, _) {
         final sorted = store.book.sorted;
-        final photos = _allPhotos(sorted);
         return Scaffold(
           floatingActionButton: !_admin || store.loading || store.error != null
               ? null
@@ -110,54 +114,66 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: () => _openForm(),
                   backgroundColor: c.accent,
                   foregroundColor: c.surface,
-                  icon: const Icon(Icons.add),
-                  label: const Text('ذكرى جديدة'),
+                  elevation: 3,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('ذكرى جديدة', style: TextStyle(fontWeight: FontWeight.w700)),
                 ),
-          body: RefreshIndicator(
-            onRefresh: store.load,
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: _Hero(
-                    store: store,
-                    onEdit: null,
-                    onViewerPassword: _admin ? _viewerPassword : null,
-                    onLogout: widget.onLogout,
-                  ),
-                ),
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: _TabsHeader(
-                    color: c.bg,
-                    line: c.line,
-                    child: _Tabs(
-                      tab: _tab,
-                      memCount: sorted.length,
-                      photoCount: photos.length,
-                      onTab: (t) => setState(() => _tab = t),
+          body: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: const [0, .45],
+                colors: [c.accentSoft, c.bg],
+              ),
+            ),
+            child: RefreshIndicator(
+              color: c.accent,
+              onRefresh: store.load,
+              child: CustomScrollView(
+                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: _Header(
+                      count: sorted.length,
+                      viewer: !_admin,
+                      onViewerPassword: _admin ? _viewerPassword : null,
+                      onRefresh: store.load,
+                      onLogout: widget.onLogout,
                     ),
                   ),
-                ),
-                if (store.loading)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (store.error != null)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _Empty(
-                      title: 'ما گدرت أجيب الذكريات',
-                      body: store.error!,
-                      action: FilledButton(onPressed: store.load, child: const Text('جرب مرة ثانية')),
-                    ),
-                  )
-                else if (_tab == 0)
-                  ..._timeline(sorted)
-                else
-                  _album(photos),
-                const SliverToBoxAdapter(child: SizedBox(height: 100)),
-              ],
+                  if (store.loading)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (store.error != null)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _Empty(
+                        title: 'ما گدرت أجيب الذكريات',
+                        body: store.error!,
+                        action: FilledButton(onPressed: store.load, child: const Text('جرب مرة ثانية')),
+                      ),
+                    )
+                  else if (sorted.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _Empty(
+                        title: 'صفحتنا بعدها بيضاء',
+                        body: _admin
+                            ? 'ابدأ بأول ذكرى: يوم الخطوبة، أو أول طلعة، أو أي يوم حلو.'
+                            : 'قريباً تنضاف هنا أول ذكرى 🤍',
+                        action: _admin
+                            ? FilledButton(onPressed: () => _openForm(), child: const Text('+ أضف أول ذكرى'))
+                            : null,
+                      ),
+                    )
+                  else
+                    ..._memories(sorted),
+                  const SliverToBoxAdapter(child: SizedBox(height: 110)),
+                ],
+              ),
             ),
           ),
         );
@@ -165,83 +181,53 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  List<Widget> _timeline(List<Memory> sorted) {
-    if (sorted.isEmpty) {
-      return [
-        SliverFillRemaining(
-          hasScrollBody: false,
-          child: _Empty(
-            title: 'صفحتكم بعدها بيضاء',
-            body: 'ابدأوا بأول ذكرى: يوم تعارفتوا، يوم الخطوبة، أو حتى طلعة الأسبوع الماضي.',
-            action: _admin
-                ? FilledButton(onPressed: () => _openForm(), child: const Text('+ أضف أول ذكرى'))
-                : null,
-          ),
-        ),
-      ];
-    }
-    final out = <Widget>[];
+  List<Widget> _memories(List<Memory> sorted) {
+    final items = <Widget>[];
     int? year;
-    final group = <Memory>[];
-    void flush() {
-      if (group.isEmpty) return;
-      final y = year!;
-      final items = List.of(group);
-      out.add(SliverToBoxAdapter(child: _Constrain(child: _YearTitle(year: y))));
-      out.add(SliverList.list(children: [
-        for (final m in items)
-          _Constrain(
-            child: _MemoryTile(
-              store: store,
-              memory: m,
-              onEdit: _admin ? () => _openForm(m) : null,
-              onDelete: _admin ? () => _delete(m) : null,
-              onPhoto: (i) => _openViewer([for (final p in m.photos) (path: p, memory: m)], i),
-            ),
-          ),
-      ]));
-      group.clear();
-    }
-
+    var i = 0;
     for (final m in sorted) {
       if (m.date.year != year) {
-        flush();
         year = m.date.year;
+        items.add(_Reveal(key: ValueKey('y$year'), index: i, child: _YearDivider(year: year)));
       }
-      group.add(m);
-    }
-    flush();
-    return out;
-  }
-
-  Widget _album(List<PhotoRef> photos) {
-    if (photos.isEmpty) {
-      return const SliverFillRemaining(
-        hasScrollBody: false,
-        child: _Empty(title: 'الألبوم فاضي', body: 'الصور اللي تضيفونها مع الذكريات تتجمع هنا.'),
-      );
-    }
-    return SliverPadding(
-      padding: const EdgeInsets.all(16),
-      sliver: SliverGrid.builder(
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 180,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 4 / 5,
-        ),
-        itemCount: photos.length,
-        itemBuilder: (_, i) => ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            onTap: () => _openViewer(photos, i),
-            child: RepoImage(store: store, path: photos[i].path),
+      items.add(_Reveal(
+        key: ValueKey(m.id),
+        index: i,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 22),
+          child: _MemoryCard(
+            store: store,
+            memory: m,
+            onEdit: _admin ? () => _openForm(m) : null,
+            onDelete: _admin ? () => _delete(m) : null,
+            onPhoto: (p) => _openViewer(m, p),
           ),
         ),
-      ),
-    );
+      ));
+      i++;
+    }
+    return [
+      SliverList.list(children: [for (final w in items) _Constrain(child: w)]),
+    ];
   }
 }
+
+/// انتقال الصفحات: تطلع من تحت بنعومة.
+Route<T> _slideUpRoute<T>(Widget page) => PageRouteBuilder<T>(
+      transitionDuration: const Duration(milliseconds: 420),
+      reverseTransitionDuration: const Duration(milliseconds: 320),
+      pageBuilder: (_, __, ___) => page,
+      transitionsBuilder: (_, a, __, child) {
+        final curved = CurvedAnimation(parent: a, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween(begin: const Offset(0, .06), end: Offset.zero).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
 
 /* ---------------- أجزاء الواجهة ---------------- */
 
@@ -251,18 +237,68 @@ class _Constrain extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
+          constraints: const BoxConstraints(maxWidth: 640),
           child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: child),
         ),
       );
 }
 
-class _Hero extends StatelessWidget {
-  final MemoryStore store;
-  final VoidCallback? onEdit;
+/// ظهور ناعم: يطلع العنصر من تحت ويتوضح، واحد ورا الثاني.
+class _Reveal extends StatefulWidget {
+  final int index;
+  final Widget child;
+  const _Reveal({super.key, required this.index, required this.child});
+
+  @override
+  State<_Reveal> createState() => _RevealState();
+}
+
+class _RevealState extends State<_Reveal> with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 650));
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+
+  @override
+  void initState() {
+    super.initState();
+    final delay = Duration(milliseconds: 80 * widget.index.clamp(0, 6).toInt());
+    Future.delayed(delay, () {
+      if (mounted) _c.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _a,
+      builder: (_, child) => Opacity(
+        opacity: _a.value,
+        child: Transform.translate(offset: Offset(0, 28 * (1 - _a.value)), child: child),
+      ),
+      child: widget.child,
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  final int count;
+  final bool viewer;
   final VoidCallback? onViewerPassword;
+  final VoidCallback onRefresh;
   final VoidCallback onLogout;
-  const _Hero({required this.store, this.onEdit, this.onViewerPassword, required this.onLogout});
+  const _Header({
+    required this.count,
+    required this.viewer,
+    this.onViewerPassword,
+    required this.onRefresh,
+    required this.onLogout,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -271,113 +307,83 @@ class _Hero extends StatelessWidget {
     final nf = NumberFormat.decimalPattern('ar');
     final df = DateFormat.yMMMMd('ar');
 
-    Widget? sinceLine;
-    Widget? countdown;
+    int? days;
+    int? left;
+    int years = 0;
     final since = cp.since;
     if (since != null) {
       final today = DateUtils.dateOnly(DateTime.now());
-      final days = today.difference(since).inDays;
-      sinceLine = Text.rich(
-        TextSpan(children: [
-          const TextSpan(text: 'سوا من '),
-          TextSpan(text: df.format(since), style: TextStyle(color: c.ink, fontWeight: FontWeight.w700)),
-          const TextSpan(text: ' · '),
-          TextSpan(
-              text: nf.format(days < 0 ? 0 : days),
-              style: TextStyle(color: c.ink, fontWeight: FontWeight.w700)),
-          const TextSpan(text: ' يوم'),
-        ]),
-        textAlign: TextAlign.center,
-        style: TextStyle(color: c.muted, fontSize: 15),
-      );
+      days = today.difference(since).inDays;
       var next = DateTime(today.year, since.month, since.day);
       if (next.isBefore(today)) next = DateTime(today.year + 1, since.month, since.day);
-      final left = next.difference(today).inDays;
-      final years = next.year - since.year;
-      if (years >= 1) {
-        countdown = Container(
-          margin: const EdgeInsets.only(top: 12),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-          decoration: BoxDecoration(
-            color: c.surface,
-            border: Border.all(color: c.line),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            left == 0
-                ? 'اليوم ذكرى خطوبتكم 🤍'
-                : 'باقي ${nf.format(left)} يوم على ذكرى خطوبتكم الـ${nf.format(years)}',
-            style: TextStyle(color: c.muted, fontSize: 14),
-          ),
-        );
-      }
+      left = next.difference(today).inDays;
+      years = next.year - since.year;
     }
 
     return SafeArea(
       bottom: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
         child: Column(
           children: [
             Align(
               alignment: AlignmentDirectional.centerEnd,
               child: PopupMenuButton<String>(
-                icon: Icon(Icons.more_horiz, color: c.muted),
+                icon: Icon(Icons.more_horiz_rounded, color: c.muted),
                 onSelected: (v) {
-                  if (v == 'edit') onEdit?.call();
                   if (v == 'viewer') onViewerPassword?.call();
-                  if (v == 'refresh') store.load();
+                  if (v == 'refresh') onRefresh();
                   if (v == 'logout') onLogout();
                 },
                 itemBuilder: (_) => [
-                  if (onEdit != null)
-                    const PopupMenuItem(value: 'edit', child: Text('تعديل الأسماء والتاريخ')),
                   if (onViewerPassword != null)
                     const PopupMenuItem(value: 'viewer', child: Text('كلمة سر المشاهدة')),
                   const PopupMenuItem(value: 'refresh', child: Text('تحديث')),
-                  const PopupMenuItem(value: 'logout', child: Text('تسجيل خروج من هذا الجهاز')),
+                  const PopupMenuItem(value: 'logout', child: Text('تسجيل خروج')),
                 ],
               ),
             ),
-            Text('دفتر ذكرياتنا',
-                style: TextStyle(color: c.gold, letterSpacing: 1, fontWeight: FontWeight.w500)),
-            const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text.rich(
-                TextSpan(children: [
-                  TextSpan(text: cp.name1.isEmpty ? 'أنا' : cp.name1),
-                  TextSpan(
-                    text: ' و ',
-                    style: displayFont(size: 60, color: c.gold, weight: FontWeight.w400),
+            _Reveal(
+              index: 0,
+              child: Column(
+                children: [
+                  Text('دفتر ذكرياتنا',
+                      style: TextStyle(color: c.gold, letterSpacing: 1.5, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 6),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      children: [
+                        Text(cp.name1, style: displayFont(size: 52, color: c.accent)),
+                        Text('و', style: displayFont(size: 40, color: c.gold, weight: FontWeight.w400)),
+                        Text(cp.name2, style: displayFont(size: 52, color: c.accent)),
+                      ],
+                    ),
                   ),
-                  TextSpan(text: cp.name2.isEmpty ? 'خطيبتي' : cp.name2),
-                ]),
-                style: displayFont(size: 64, color: c.accent),
-                textAlign: TextAlign.center,
+                  const SizedBox(height: 18),
+                  if (days != null)
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _Stat(value: nf.format(days < 0 ? 0 : days), label: 'يوم سوا'),
+                        _Stat(value: nf.format(count), label: count == 1 ? 'ذكرى' : 'ذكريات'),
+                        if (left != null && years >= 1)
+                          _Stat(
+                            value: left == 0 ? '🤍' : nf.format(left),
+                            label: left == 0 ? 'اليوم ذكرانا' : 'يوم لذكرانا الـ${nf.format(years)}',
+                          ),
+                      ],
+                    ),
+                  if (since != null) ...[
+                    const SizedBox(height: 12),
+                    Text('مخطوبين من ${df.format(since)}', style: TextStyle(color: c.muted, fontSize: 14)),
+                  ],
+                  const SizedBox(height: 22),
+                  const _Ornament(),
+                ],
               ),
-            ),
-            const SizedBox(height: 4),
-            if (sinceLine != null)
-              sinceLine
-            else if (onEdit != null)
-              TextButton(
-                onPressed: onEdit,
-                child: Text('اكتبوا أسماءكم وتاريخ الخطوبة',
-                    style: TextStyle(color: c.muted, decoration: TextDecoration.underline)),
-              ),
-            if (countdown != null) countdown,
-            const SizedBox(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(width: 64, height: 1, color: c.gold.withAlpha(128)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('❦', style: TextStyle(color: c.gold, fontSize: 18)),
-                ),
-                Container(width: 64, height: 1, color: c.gold.withAlpha(128)),
-              ],
             ),
           ],
         ),
@@ -386,87 +392,94 @@ class _Hero extends StatelessWidget {
   }
 }
 
-class _Tabs extends StatelessWidget {
-  final int tab;
-  final int memCount;
-  final int photoCount;
-  final ValueChanged<int> onTab;
-  const _Tabs({required this.tab, required this.memCount, required this.photoCount, required this.onTab});
+class _Stat extends StatelessWidget {
+  final String value;
+  final String label;
+  const _Stat({required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final nf = NumberFormat.decimalPattern('ar');
-    Widget pill(int i, String label, int n) {
-      final sel = tab == i;
-      return Padding(
-        padding: const EdgeInsetsDirectional.only(end: 6),
-        child: Material(
-          color: sel ? c.accentSoft : Colors.transparent,
-          shape: const StadiumBorder(),
-          child: InkWell(
-            customBorder: const StadiumBorder(),
-            onTap: () => onTab(i),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              child: Text(
-                n > 0 ? '$label  ${nf.format(n)}' : label,
-                style: TextStyle(color: sel ? c.accent : c.muted, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return _Constrain(
-      child: Row(children: [pill(0, 'الذكريات', memCount), pill(1, 'الألبوم', photoCount)]),
+    return Container(
+      constraints: const BoxConstraints(minWidth: 96),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: c.surface.withAlpha(200),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: c.line),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value,
+              style: TextStyle(
+                  color: c.accent, fontSize: 22, fontWeight: FontWeight.w700, height: 1.2,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
+          Text(label, style: TextStyle(color: c.muted, fontSize: 12.5)),
+        ],
+      ),
     );
   }
 }
 
-class _TabsHeader extends SliverPersistentHeaderDelegate {
-  final Widget child;
-  final Color color;
-  final Color line;
-  _TabsHeader({required this.child, required this.color, required this.line});
-
+class _Ornament extends StatelessWidget {
+  const _Ornament();
   @override
-  double get minExtent => 56;
-  @override
-  double get maxExtent => 56;
-
-  @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => Container(
-        decoration: BoxDecoration(color: color, border: Border(bottom: BorderSide(color: line))),
-        alignment: Alignment.center,
-        child: child,
-      );
-
-  @override
-  bool shouldRebuild(covariant _TabsHeader old) => true;
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    Widget line(bool rtl) => Container(
+          width: 70,
+          height: 1,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: rtl ? [c.gold.withAlpha(0), c.gold] : [c.gold, c.gold.withAlpha(0)],
+            ),
+          ),
+        );
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        line(true),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text('❦', style: TextStyle(color: c.gold, fontSize: 18)),
+        ),
+        line(false),
+      ],
+    );
+  }
 }
 
-class _YearTitle extends StatelessWidget {
+class _YearDivider extends StatelessWidget {
   final int year;
-  const _YearTitle({required this.year});
+  const _YearDivider({required this.year});
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 28, bottom: 6),
-      child: Text(NumberFormat('####', 'ar').format(year), style: displayFont(size: 34, color: c.gold)),
+      padding: const EdgeInsets.only(top: 18, bottom: 14),
+      child: Row(
+        children: [
+          Expanded(child: Container(height: 1, color: c.line)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Text(NumberFormat('####', 'ar').format(year), style: displayFont(size: 30, color: c.gold)),
+          ),
+          Expanded(child: Container(height: 1, color: c.line)),
+        ],
+      ),
     );
   }
 }
 
-class _MemoryTile extends StatelessWidget {
+/// بطاقة الذكرى: صورة كبيرة، وتحتها العنوان والقصة وباقي الصور.
+class _MemoryCard extends StatelessWidget {
   final MemoryStore store;
   final Memory memory;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final ValueChanged<int> onPhoto;
-  const _MemoryTile({
+  const _MemoryCard({
     required this.store,
     required this.memory,
     this.onEdit,
@@ -478,120 +491,210 @@ class _MemoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final m = memory;
-    final shown = m.photos.take(6).toList();
-    // خط الزمن: حد جانبي على يمين المحتوى، ونقطة لكل ذكرى
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          margin: const EdgeInsetsDirectional.only(start: 11),
-          padding: const EdgeInsetsDirectional.only(start: 22, bottom: 28),
-          decoration: BoxDecoration(
-            border: BorderDirectional(start: BorderSide(color: c.line)),
-          ),
-          child: SizedBox(
-            width: double.infinity,
+    final date = DateFormat.MMMMd('ar').format(m.date);
+    final hasPhotos = m.photos.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(color: c.accent.withAlpha(22), blurRadius: 30, offset: const Offset(0, 12)),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (hasPhotos)
+            GestureDetector(
+              onTap: () => onPhoto(0),
+              child: AspectRatio(
+                aspectRatio: 4 / 3,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Hero(
+                      tag: photoHeroTag(m, m.photos.first),
+                      child: RepoImage(store: store, path: m.photos.first),
+                    ),
+                    // تدرج خفيف حتى التاريخ يبين
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: [0, .35],
+                          colors: [Color(0x55000000), Color(0x00000000)],
+                        ),
+                      ),
+                    ),
+                    PositionedDirectional(
+                      top: 14,
+                      start: 14,
+                      child: _Chip(text: date, onImage: true),
+                    ),
+                    if (m.photos.length > 1)
+                      PositionedDirectional(
+                        top: 14,
+                        end: 14,
+                        child: _Chip(text: '${m.photos.length} صور', icon: Icons.photo_library_outlined, onImage: true),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
             child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(DateFormat.MMMMd('ar').format(m.date),
-                          style: TextStyle(color: c.accent, fontWeight: FontWeight.w700, fontSize: 14)),
-                      if (m.place.isNotEmpty)
-                        Text('📍 ${m.place}', style: TextStyle(color: c.muted, fontSize: 14)),
-                      if (m.tag.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: c.line),
-                            borderRadius: BorderRadius.circular(999),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (!hasPhotos) _Chip(text: date),
+                    if (m.tag.isNotEmpty) _Chip(text: m.tag),
+                    if (m.place.isNotEmpty) _Chip(text: m.place, icon: Icons.place_outlined),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(m.title.isEmpty ? 'بدون عنوان' : m.title,
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, height: 1.4, color: c.ink)),
+                if (m.story.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _ExpandableText(m.story),
+                ],
+                if (m.photos.length > 1) ...[
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    height: 86,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: m.photos.length - 1,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (_, i) {
+                        final p = m.photos[i + 1];
+                        return GestureDetector(
+                          onTap: () => onPhoto(i + 1),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: SizedBox(
+                              width: 86,
+                              child: Hero(tag: photoHeroTag(m, p), child: RepoImage(store: store, path: p)),
+                            ),
                           ),
-                          child: Text(m.tag, style: TextStyle(color: c.muted, fontSize: 13)),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                if (onEdit != null || onDelete != null) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      if (onEdit != null)
+                        IconButton(
+                          tooltip: 'تعديل',
+                          onPressed: onEdit,
+                          icon: Icon(Icons.edit_outlined, color: c.muted, size: 20),
+                        ),
+                      if (onDelete != null)
+                        IconButton(
+                          tooltip: 'حذف',
+                          onPressed: onDelete,
+                          icon: Icon(Icons.delete_outline_rounded, color: c.danger, size: 20),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(m.title.isEmpty ? 'بدون عنوان' : m.title,
-                      style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700, height: 1.4)),
-                  if (m.story.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 620),
-                      child: Text(m.story, style: const TextStyle(fontSize: 16, height: 1.75)),
-                    ),
-                  ],
-                  if (shown.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 560),
-                      child: GridView.extent(
-                        maxCrossAxisExtent: 120,
-                        mainAxisSpacing: 6,
-                        crossAxisSpacing: 6,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        children: [
-                          for (var i = 0; i < shown.length; i++)
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: InkWell(
-                                onTap: () => onPhoto(i),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    RepoImage(store: store, path: shown[i]),
-                                    if (i == 5 && m.photos.length > 6)
-                                      Container(
-                                        color: Colors.black45,
-                                        alignment: Alignment.center,
-                                        child: Text('+${m.photos.length - 6}',
-                                            style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 20,
-                                                fontWeight: FontWeight.w700)),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  if (onEdit != null || onDelete != null) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        if (onEdit != null)
-                          TextButton(onPressed: onEdit, child: Text('تعديل', style: TextStyle(color: c.muted))),
-                        if (onDelete != null)
-                          TextButton(onPressed: onDelete, child: Text('حذف', style: TextStyle(color: c.danger))),
-                      ],
-                    ),
-                  ],
                 ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String text;
+  final IconData? icon;
+  final bool onImage;
+  const _Chip({required this.text, this.icon, this.onImage = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final fg = onImage ? Colors.white : c.muted;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
+      decoration: BoxDecoration(
+        color: onImage ? const Color(0x66000000) : c.accentSoft.withAlpha(150),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[Icon(icon, size: 14, color: fg), const SizedBox(width: 4)],
+          Text(text, style: TextStyle(color: fg, fontSize: 13, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+}
+
+/// نص القصة: يعرض أول كم سطر، و"اقرأ أكثر" يفتح الباقي بحركة ناعمة.
+class _ExpandableText extends StatefulWidget {
+  final String text;
+  const _ExpandableText(this.text);
+  @override
+  State<_ExpandableText> createState() => _ExpandableTextState();
+}
+
+class _ExpandableTextState extends State<_ExpandableText> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final style = TextStyle(fontSize: 16, height: 1.85, color: c.ink.withAlpha(220));
+    return LayoutBuilder(builder: (context, box) {
+      final tp = TextPainter(
+        text: TextSpan(text: widget.text, style: style),
+        maxLines: 5,
+        textDirection: Directionality.of(context),
+      )..layout(maxWidth: box.maxWidth);
+      final long = tp.didExceedMaxLines;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AnimatedSize(
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: Text(
+              widget.text,
+              style: style,
+              maxLines: _open ? null : 5,
+              overflow: _open ? TextOverflow.visible : TextOverflow.fade,
+            ),
+          ),
+          if (long)
+            GestureDetector(
+              onTap: () => setState(() => _open = !_open),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(_open ? 'أقل' : 'اقرأ أكثر',
+                    style: TextStyle(color: c.accent, fontWeight: FontWeight.w700, fontSize: 14)),
               ),
             ),
-          ),
-        PositionedDirectional(
-          start: 5,
-          top: 9,
-          child: Container(
-            width: 13,
-            height: 13,
-            decoration: BoxDecoration(
-              color: c.bg,
-              shape: BoxShape.circle,
-              border: Border.all(color: c.accent, width: 2),
-            ),
-          ),
-        ),
-      ],
-    );
+        ],
+      );
+    });
   }
 }
 
@@ -618,131 +721,6 @@ class _Empty extends StatelessWidget {
           if (action != null) ...[const SizedBox(height: 18), action!],
         ],
       ),
-    );
-  }
-}
-
-class _ViewerPasswordDialog extends StatefulWidget {
-  final RepoSettings settings;
-  final String siteOwner;
-  final String siteRepo;
-  const _ViewerPasswordDialog({required this.settings, required this.siteOwner, required this.siteRepo});
-
-  @override
-  State<_ViewerPasswordDialog> createState() => _ViewerPasswordDialogState();
-}
-
-class _ViewerPasswordDialogState extends State<_ViewerPasswordDialog> {
-  final _pw = TextEditingController();
-  final _pw2 = TextEditingController();
-  bool _busy = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _pw.dispose();
-    _pw2.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final pw = _pw.text;
-    if (pw.isEmpty) {
-      setState(() => _error = 'اكتب كلمة السر.');
-      return;
-    }
-    if (pw.length < 6) {
-      setState(() => _error = 'خلي كلمة السر ٦ حروف أو أكثر.');
-      return;
-    }
-    if (pw != _pw2.text) {
-      setState(() => _error = 'كلمتين السر مو متطابقات.');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final s = widget.settings;
-    try {
-      // المشاهد يدخل بنفس الوصول، بس الموقع يفتحله وضع المشاهدة (بدون تعديل)
-      final cfg = await ViewerAccess.encrypt(
-        {'owner': s.owner, 'repo': s.repo, 'branch': s.branch, 'token': s.token},
-        pw,
-      );
-      try {
-        await ViewerAccess.publish(
-          adminToken: s.token,
-          siteOwner: widget.siteOwner,
-          siteRepo: widget.siteRepo,
-          config: cfg,
-        );
-      } on GitHubException catch (e) {
-        if (e.status == 403 || e.status == 404) {
-          throw GitHubException(e.status,
-              'التوكن مالتك ما عنده صلاحية على repo الموقع (${widget.siteRepo}). ضيفه للتوكن من إعدادات GitHub بصلاحية Contents: Read and write.');
-        }
-        rethrow;
-      }
-      if (mounted) Navigator.pop(context, true);
-    } on GitHubException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    } catch (_) {
-      if (mounted) setState(() => _error = 'ما انحفظت، تأكد من الإنترنت وجرب مرة ثانية.');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return AlertDialog(
-      title: Text('كلمة سر المشاهدة', style: displayFont(size: 26, color: c.accent)),
-      content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'اللي يدخل بكلمة السر يشوف الذكريات والصور بس، بدون إضافة أو تعديل أو حذف. إذا حفظت كلمة سر جديدة، القديمة تبطل.',
-                style: TextStyle(color: c.muted, fontSize: 14, height: 1.6),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _pw,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'كلمة السر الجديدة'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _pw2,
-                obscureText: true,
-                onSubmitted: (_) => _save(),
-                decoration: const InputDecoration(labelText: 'أعد كتابة كلمة السر'),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 10),
-                Text(_error!, style: TextStyle(color: c.danger, fontSize: 14)),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context, false),
-          child: const Text('إلغاء'),
-        ),
-        FilledButton(
-          onPressed: _busy ? null : _save,
-          child: _busy
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('حفظ'),
-        ),
-      ],
     );
   }
 }
